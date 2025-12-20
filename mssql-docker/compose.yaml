@@ -1,0 +1,70 @@
+services:
+  sqlserver:
+    # Official Microsoft SQL Server 2019 image
+    image: mcr.microsoft.com/mssql/server:2019-latest
+
+    # Fixed container name for easier reference (logs, exec, networking)
+    container_name: sqlserver
+
+    volumes:
+      # Mount SQL initialization scripts (.sql files)
+      # These will be executed by entrypoint.sh after SQL Server starts
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+
+      # Persistent storage for SQL Server system & user databases
+      # Prevents data loss when the container restarts
+      - sqlserver-data:/var/opt/mssql
+
+      # Custom entrypoint script that:
+      # 1. Starts SQL Server
+      # 2. Waits until SQL Server is ready
+      # 3. Executes all .sql scripts in init-scripts/
+      - ./entrypoint.sh:/entrypoint.sh:ro
+
+    environment:
+      # Required by Microsoft SQL Server image
+      - ACCEPT_EULA=Y
+
+      # System Administrator (sa) password
+      # Must meet SQL Server password complexity rules
+      - SA_PASSWORD=YourStrong!Passw0rd
+
+    ports:
+      # Expose SQL Server port to host machine
+      # Allows connections from tools like SSMS, Azure Data Studio, etc.
+      - "1433:1433"
+
+    # Override the default container entrypoint
+    # Ensures our custom startup logic is used instead of sqlservr directly
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+
+    healthcheck:
+      # Periodically check if SQL Server is accepting connections
+      # Used by Docker to mark the container as healthy/unhealthy
+      test:
+        [
+          "CMD",
+          "/opt/mssql-tools18/bin/sqlcmd",
+          "-S", "localhost",
+          "-U", "sa",
+          "-P", "YourStrong!Passw0rd",
+          "-Q", "SELECT 1"
+        ]
+
+      # Run health check every 30 seconds
+      interval: 30s
+
+      # Mark the check as failed if it takes longer than 10 seconds
+      timeout: 10s
+
+      # Number of consecutive failures before marking container unhealthy
+      retries: 3
+
+      # Initial delay before health checks start
+      # Gives SQL Server enough time to fully initialize
+      start_period: 60s
+
+volumes:
+  # Named Docker volume used for SQL Server data persistence
+  # Stored outside the container lifecycle
+  sqlserver-data:
