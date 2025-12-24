@@ -1,0 +1,85 @@
+services:
+  postgres:
+    # PostgreSQL database service
+    image: postgres:16-alpine # Pinned PostgreSQL version for stability
+    container_name: postgres # Fixed container name for easier reference
+    restart: unless-stopped # Automatically restart unless manually stopped
+
+    environment:
+      # Database credentials and default database
+      # Values are loaded from the .env file (recommended for production)
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    ports:
+      # Expose PostgreSQL port to the host
+      # Remove this in production if DB should not be publicly accessible
+      - "5432:5432"
+
+    volumes:
+      # Persistent volume for PostgreSQL data files
+      # Ensures data is preserved across container restarts/redeployments
+      - postgres-data:/var/lib/postgresql/data
+
+      # Initialization scripts directory
+      # SQL or shell scripts placed here run ONLY on first database creation
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      # Checks if PostgreSQL is ready to accept connections
+      # Used by dependent services (like pgAdmin) to wait for DB readiness
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 10s # Time between health checks
+      timeout: 5s # Health check timeout
+      retries: 5 # Fail after this many unsuccessful checks
+      start_period: 20s # Grace period before starting health checks
+
+    networks:
+      # Internal network for database-related services
+      - backend
+
+  pgadmin:
+    # pgAdmin web-based UI for managing PostgreSQL
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+
+    depends_on:
+      # Ensures pgAdmin starts only after PostgreSQL is healthy
+      postgres:
+        condition: service_healthy
+
+    environment:
+      # pgAdmin login credentials (stored in .env)
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+
+      # Enables multi-user server mode (recommended for production)
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+
+    ports:
+      # Expose pgAdmin web UI
+      # Access via http://localhost:5050
+      - "5050:80"
+
+    volumes:
+      # Persistent pgAdmin configuration and saved connections
+      - pgadmin-data:/var/lib/pgadmin
+
+    networks:
+      # Same backend network as PostgreSQL
+      - backend
+
+volumes:
+  # Named volume for PostgreSQL data persistence
+  postgres-data:
+
+  # Named volume for pgAdmin configuration persistence
+  pgadmin-data:
+
+
+networks:
+  # Private bridge network for internal service communication
+  backend:
+    driver: bridge
